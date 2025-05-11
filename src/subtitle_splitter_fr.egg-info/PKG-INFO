@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: subtitle_splitter_fr
-Version: 0.1.1
+Version: 0.1.1.2
 Summary: Divise des textes en sous-titres basés sur un modèle ONNX.
 Author-email: Jules Goueffon <jules.goueffon89@gmail.com>
 License: MIT

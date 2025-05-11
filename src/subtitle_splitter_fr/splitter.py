@@ -1,4 +1,4 @@
-from typing import List, Literal, Tuple
+from typing import List, Literal, Tuple, Any
 
 import nltk
 import numpy as np
@@ -8,7 +8,7 @@ from importlib_resources import files
 from transformers import AutoTokenizer
 
 from subtitle_splitter_fr.preprocessing_utils import split_text_into_elements
-from subtitle_splitter_fr.splitting_strategies import merge, split_subtitles_recursive
+from subtitle_splitter_fr.splitting_strategies import merge_strat, split_rec_strat, hybride_strat, cutting_into_2_line
 
 import logging
 
@@ -79,7 +79,7 @@ class Splitter:
             logger.error(f"Unexpected error during model or tokenizer loading: {e}")
             raise
 
-    def split(self, text: str, length: int = 15, method: Literal["MERGE", "SPLIT"] = "MERGE") -> List[str]:
+    def split(self, text: str, length: int = 15, method: Literal["MERGE", "SPLIT", "HYBRIDE"] = "MERGE") -> List[str]:
         if not text or text.isspace():
             return []
 
@@ -92,19 +92,24 @@ class Splitter:
         if not elements_scores_predicts:
             return [text] if text.strip() else []
 
-        min_chars = max(10, int(length * 2 / 3))
+        min_chars = max(7, int(length * 2 / 3))
         max_chars = 2 * min_chars
 
-        sub_titles = []
         try:
             if method == "MERGE":
-                sub_titles = merge(
+                sub_titles = merge_strat(
                     elements_scores_predicts,
                     min_chars=min_chars,
                     max_chars=max_chars,
                 )
             elif method == "SPLIT":
-                sub_titles = split_subtitles_recursive(
+                sub_titles = split_rec_strat(
+                    elements_scores_predicts,
+                    min_chars=min_chars,
+                    max_chars=max_chars,
+                )
+            elif method == "HYBRIDE":
+                sub_titles = hybride_strat(
                     elements_scores_predicts,
                     min_chars=min_chars,
                     max_chars=max_chars,
@@ -115,6 +120,29 @@ class Splitter:
         except Exception as e:
             logger.error(f"Error during splitting method '{method}': {e}. Returning original text.")
             return [text]
+
+        return sub_titles
+    def split_two_line(self, text: str, length: int = 15) -> list[str] | list[Any] | list[list[str]]:
+        if not text or text.isspace():
+            return []
+
+        try:
+            elements_scores_predicts = self._predict_scores(text)
+        except Exception as e:
+            logger.error(f"Error predicting scores for text: '{text[:50]}...'. Error: {e}")
+            return [text]
+
+        if not elements_scores_predicts:
+            return [text] if text.strip() else []
+
+        min_chars = max(7, int(length * 2 / 3))
+        max_chars = 2 * min_chars
+
+        sub_titles = cutting_into_2_line(
+            elements_scores_predicts,
+            min_chars_by_line=min_chars,
+            max_chars_by_line=max_chars,
+        )
 
         return sub_titles
 
@@ -279,27 +307,16 @@ List[Tuple[dict, List[str], List[int]]]:
 
     return sentences_preprocess
 
+if __name__ == "__main__":
+    splitter = Splitter()
+    t="""Les événements historiques de la grande chasse aux sorcières ont toujours été mystérieux. La sorcellerie fascine depuis l’Antiquité, comme témoigne Hécate, déesse de la sorcellerie dans la mythologie grecque. La grande Chasse est difficile à appréhender pour nos intelligences rationalistes. Elle pose beaucoup de questions, d’abord, sur les raisons d’une telle tuerie, mais aussi sur son ampleur tant sur le plan de l’intensité que de la géographie, sur l’identité de ceux qui furent poursuivis et de ceux qui les jugèrent, et enfin sur son évolution et sa fin aussi soudaine que son commencement. R. Mandrou, R. Muchembled, B.P. Levack, et G. Bechtel ont tous porté un regard nouveau sur la chasse aux sorcières dans leurs livres. Tous édités dans les quarante dernières années, ils reviennent sur l’interprétation de Michelet et nuancent le rôle de l’Église.
 
-def find_zero_score_series(elements_with_scores: List[Tuple[str, float]], zero_threshold: float = 0.2) -> List[
-    Tuple[int, int, int]]:
-    zero_series: List[Tuple[int, int, int]] = []
-    current_series_start = -1
-    current_series_chars = 0
+La sorcière qui lit l’avenir, fait tomber amoureux ou malade est crainte et désapprouvée, mais tolérée. Une transformation de l’image de la sorcière et de celle du Diable intervient au XIIe siècle. Elle et le Diable deviennent des conspirateurs qui cherchent à empêcher le royaume de Dieu. La sorcière est recherchée puis jugée avant d’être punie, d’abord légèrement. Les conditions de vie sont dures et le Diable est tenu pour responsable. La Réforme accélère le phénomène. Plus l’Église catholique perd d’influence sur cette question, plus les bûchers s’imposent à l’issue des procès. Autour de 1600, la justice pénale cherchant à soustraire la société à l’influence du Diable se montre impitoyable. À l’aube des Lumières, les accusations provoquent des scandales et la dynamique de la Chasse s’épuise. Les pouvoirs centraux émergeant mettent alors un terme aux poursuites. Les raisons profondes de cette Chasse restent une énigme : est-ce dû à l’émergence de pouvoirs centraux, au rejet des valeurs rurales, ou à l’attitude des élites ? Chacun de ses éléments et d’autres ont sans doute joué un rôle. Aucune cause unique ne peut être mise en évidence. Mais l’analyse récente proposée par ces auteurs permet de se faire une meilleure idée des processus qui ont conduit à la grande Chasse..."""
+    texte_exemple = "Le château se dressait sur une colline escarpée, dominant la vallée sinueuse où la rivière serpentait lentement, reflétant les rayons du soleil couchant. À l'intérieur, de vastes salles résonnaient du silence des siècles passés, tandis que des tapisseriesComplexes ornaient les murs de pierre froide, racontant des histoires oubliées de chevaliers et de dames. Dehors, le vent murmurait à travers les arbres centenaires, emportant avec lui les échos d'un temps révolu."
+    sous_titres = splitter.split_two_line(t, length=10)
 
-    for i, (element, score) in enumerate(elements_with_scores):
-        is_zero = score < zero_threshold
+    print("\nSous-titres générés :")
+    for i, subs in enumerate(sous_titres):
+        f=", ".join([str(len(s)) for s in subs])
 
-        if is_zero and current_series_start == -1:
-            current_series_start = i
-            current_series_chars = len(element)
-        elif is_zero and current_series_start != -1:
-            current_series_chars += len(element) + 1
-        elif not is_zero and current_series_start != -1:
-            zero_series.append((current_series_start, i - 1, current_series_chars))
-            current_series_start = -1
-            current_series_chars = 0
-
-    if current_series_start != -1:
-        zero_series.append((current_series_start, len(elements_with_scores) - 1, current_series_chars))
-
-    return zero_series
+        print(f"{i + 1}: {subs} ({f} chars)")
