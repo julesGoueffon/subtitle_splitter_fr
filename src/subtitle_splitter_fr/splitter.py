@@ -42,7 +42,7 @@ class Splitter:
     def __init__(self):
         try:
             nltk.data.find('tokenizers/punkt_tab')
-        except (nltk.downloader.DownloadError, LookupError):
+        except Exception as e0:
             logger.info("NLTK 'punkt_tab' resource not found, attempting to download.")
             try:
                 nltk.download('punkt_tab', quiet=True)
